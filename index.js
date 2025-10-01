@@ -1,46 +1,39 @@
-// proses import dependency ke dalam file index.js
 import express from "express";
 import cors from "cors";
-import { GoogleGenAI } from "@google/genai";
-
+import multer from "multer";
 import "dotenv/config";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const app = express();
-const ai = new GoogleGenAI({});
-
 app.use(cors());
 app.use(express.json());
 
+const ai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+const upload = multer({ storage: multer.memoryStorage() });
+
 app.post("/chat", async (req, res) => {
-  const { body } = req;
-  const { prompt } = body;
+  const { prompt } = req.body;
 
   if (!prompt || typeof prompt !== "string") {
-    res.status(400).json({
-      message: "Prompt harus diisi dan berupa string!",
-      data: null,
+    return res.status(400).json({
       success: false,
+      data: null,
+      message: "Prompt harus diisi dan berupa string!",
     });
-    return;
   }
 
   try {
-    const aiResponse = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: [
-        {
-          parts: [{ text: prompt }],
-        },
-      ],
-    });
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const aiResponse = await model.generateContent(prompt);
 
     res.status(200).json({
       success: true,
-      data: aiResponse.text,
+      data: aiResponse.response.text(),
       message: "Berhasil ditanggapi oleh Google Gemini Flash!",
     });
   } catch (e) {
-    console.log(e);
+    console.error(e);
     res.status(500).json({
       success: false,
       data: null,
@@ -49,7 +42,39 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-// entry point-nya
+app.post("/jelasingambar", upload.single("image"), async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    const imageBase64 = req.file.buffer.toString("base64");
+
+    const model = ai.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const resp = await model.generateContent({
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            {
+              inlineData: {
+                mimeType: req.file.mimetype,
+                data: imageBase64,
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    const resultText = resp.response.text();
+    res.json({ success: true, result: resultText });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Entry point
 app.listen(3000, () => {
-  console.log("Chatbot Gemini Mantap !!");
+  console.log("🚀 Chatbot Gemini jalan di http://localhost:3000");
 });
